@@ -1,0 +1,25 @@
+{
+  "name": "nocake/product-importer",
+  "description": "Imports product lists into nocake search database",
+  "keywords": ["search", "client", "elasticsearch"],
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "authors": [
+    {
+      "name": "Daniel Bosen",
+      "email": "daniel@bosen.eu"
+    }
+  ],
+  "require": {
+    "elasticsearch/elasticsearch": "^5.0",
+    "webmozart/console": "~1.0",
+    "guzzlehttp/guzzle": "^6.2",
+    "parsecsv/php-parsecsv": "^0.4.5",
+    "monolog/monolog": "^1.22"
+  },
+  "autoload": {
+    "psr-4": {
+      "Nocake\\": "src/"
+    }
+  }
+}
