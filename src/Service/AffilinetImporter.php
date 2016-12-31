@@ -35,7 +35,6 @@ class AffilinetImporter implements ImporterInterface {
     foreach ($this->lists as $list) {
       $this->log("Importing list for '" . $list['Titel'] . "'", 'info');
       $this->importList($list, $download);
-      die();
     }
   }
 
