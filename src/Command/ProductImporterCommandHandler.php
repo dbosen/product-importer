@@ -4,8 +4,8 @@ namespace Nocake\Command;
 
 use Nocake\Service\ImporterInterface;
 use Webmozart\Console\Api\Args\Args;
-use Webmozart\Console\Api\Command\Command;
 use Webmozart\Console\Api\IO\IO;
+use Webmozart\Console\Api\Command\Command;
 
 class ProductImporterCommandHandler
 {
@@ -37,7 +37,7 @@ class ProductImporterCommandHandler
      */
     public function handle(Args $args, IO $io, Command $command)
     {
-        $this->importer->import();
+        $this->importer->import($args->getOption('download'));
 //        $io->writeLine('Hello!');
         return 0;
     }

@@ -5,5 +5,5 @@ namespace Nocake\Service;
 
 interface ImporterInterface
 {
-    public function import();
+    public function import($download);
 }

@@ -1,6 +1,8 @@
 <?php
 namespace Nocake\Config;
 
+use Webmozart\Console\Api\Args\Format\Argument;
+use Webmozart\Console\Api\Args\Format\Option;
 use Webmozart\Console\Config\DefaultApplicationConfig;
 use Nocake\Command\ProductImporterCommandHandler;
 use Nocake\Service\AffilinetImporter;
@@ -18,8 +20,9 @@ class ProductImporterConfig extends DefaultApplicationConfig
           ->setName('productimporter')
           ->setVersion('0.1')
           ->beginCommand('import')
-          ->setDescription('Imports product lists into nocake search database')
-          ->setHandler(new ProductImporterCommandHandler(new AffilinetImporter()))
+            ->setDescription('Imports product lists into nocake search database')
+            ->setHandler(new ProductImporterCommandHandler(new AffilinetImporter()))
+            ->addOption('download', null, Option::OPTIONAL_VALUE, 'Download XML files before importing', 1)
           ->end()
         ;
     }
