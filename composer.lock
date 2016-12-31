@@ -4,8 +4,8 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "hash": "51283ced55212623ce2aca87a92faccb",
-    "content-hash": "b48c2159c53ce86117fd9b592ab0b416",
+    "hash": "2609dae6a8ed4f9919f2a522db9ec1ce",
+    "content-hash": "81b47fc824fc02648bc1617ed9b1b6a9",
     "packages": [
         {
             "name": "elasticsearch/elasticsearch",
@@ -447,6 +447,47 @@
             ],
             "description": "CSV data parser for PHP",
             "time": "2014-06-03 00:37:04"
+        },
+        {
+            "name": "prewk/xml-string-streamer",
+            "version": "0.8.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/prewk/xml-string-streamer.git",
+                "reference": "c737f8b01bd9293f6304e7af0f4dab258de161b7"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/prewk/xml-string-streamer/zipball/c737f8b01bd9293f6304e7af0f4dab258de161b7",
+                "reference": "c737f8b01bd9293f6304e7af0f4dab258de161b7",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.3.0"
+            },
+            "require-dev": {
+                "mockery/mockery": "0.8.0",
+                "prewk/xml-faker": "0.0.2"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Prewk\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "prewk",
+                    "email": "oskar.thornblad@gmail.com"
+                }
+            ],
+            "description": "Stream large XML files with low memory consumption",
+            "homepage": "https://github.com/prewk/xml-string-streamer",
+            "time": "2016-10-11 18:17:23"
         },
         {
             "name": "psr/http-message",

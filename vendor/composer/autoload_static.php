@@ -36,6 +36,7 @@ class ComposerStaticInit2ef9fb81a46fbe3fafcffbec9eb38427
         array (
             'Psr\\Log\\' => 8,
             'Psr\\Http\\Message\\' => 17,
+            'Prewk\\' => 6,
         ),
         'N' => 
         array (
@@ -99,6 +100,10 @@ class ComposerStaticInit2ef9fb81a46fbe3fafcffbec9eb38427
         'Psr\\Http\\Message\\' => 
         array (
             0 => __DIR__ . '/..' . '/psr/http-message/src',
+        ),
+        'Prewk\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/prewk/xml-string-streamer/src',
         ),
         'Nocake\\' => 
         array (
