@@ -12,6 +12,8 @@ class AffilinetImporter implements ImporterInterface {
   const PARTNER_ID = '493114';
   const API_PASSWORD = 'qfLfcZ4GPWVJUATGIyCY';
   const DOWNLOAD_PATH = 'affilinet_importer_download';
+  const IGNORE_LISTS = [4268, 4745, 3661, 1206];
+
 
   private $lists = [];
   private $http;
@@ -32,9 +34,12 @@ class AffilinetImporter implements ImporterInterface {
   public function import($download = 1) {
     $this->getSources();
     $this->recreateShopIndex();
+
     foreach ($this->lists as $list) {
-      $this->log("Importing list for '" . $list['Titel'] . "'", 'info');
-      $this->importList($list, $download);
+      if(!in_array($list['ListID'], self::IGNORE_LISTS)) {
+        $this->log("Importing ${list['Products']} products from '${list['Titel']}'", 'info');
+        $this->importList($list, $download);
+      }
     }
   }
 
