@@ -12,12 +12,11 @@ class AffilinetImporter implements ImporterInterface {
   const PARTNER_ID = '493114';
   const API_PASSWORD = 'qfLfcZ4GPWVJUATGIyCY';
   const DOWNLOAD_PATH = 'affilinet_importer_download';
-  const IGNORE_LISTS = [4268, 4745, 3661, 1206];
-
+  const IGNORE_LISTS = [4745, 3661, 1206];
 
   private $lists = [];
   private $http;
-  private $download;
+  private $indexName;
 
   /**
    * @var \Elasticsearch\Client
@@ -33,14 +32,22 @@ class AffilinetImporter implements ImporterInterface {
 
   public function import($download = 1) {
     $this->getSources();
-    $this->recreateShopIndex();
-
-    foreach ($this->lists as $list) {
-      if(!in_array($list['ListID'], self::IGNORE_LISTS)) {
-        $this->log("Importing ${list['Products']} products from '${list['Titel']}'", 'info');
-        $this->importList($list, $download);
+    $this->createIndex();
+    try {
+      foreach ($this->lists as $list) {
+        if (!in_array($list['ListID'], self::IGNORE_LISTS)) {
+          $this->log("Importing ${list['Products']} products from '${list['Titel']}'", 'info');
+          $this->importList($list, $download);
+        }
       }
+    } catch (\Exception $e) {
+      $this->log($e->getMessage(), 'error');
+      $this->deleteIndex();
+      // do not update aliases
+      return;
     }
+
+    $this->updateAlias();
   }
 
   private function getSources() {
@@ -100,30 +107,25 @@ class AffilinetImporter implements ImporterInterface {
 
   }
 
-  private function handleXmlError() {
-    $errors = libxml_get_errors();
-
-    foreach ($errors as $error) {
-      $this->log($error->message, 'warning');
-    }
-
-    libxml_clear_errors();
-  }
-
-  private function recreateShopIndex() {
-    $shopParams = $this->getBaseParams();
+  private function createIndex() {
     $indices = $this->elasticSearch->indices();
-    $index = ['index' => $shopParams['index']];
+    $index = $this->getIndexParameter();
 
     try {
       if ($indices->exists($index)) {
-        $indices->delete($index);
-        $this->log("Index ${index['index']} deleted", 'info');
+        $this->log("Index ${index['index']} already existed", 'info');
+      } else {
+        $indices->create($this->getIndexParams());
+        $this->log("Index ${index['index']} created", 'info');
       }
-      $indices->create($this->getIndexParams());
-      $this->log("Index ${index['index']} created", 'info');
     } catch (\Exception $e) {
       $this->log($e->getMessage(), 'error');
+    }
+  }
+  private function deleteIndex() {
+    $indices = $this->elasticSearch->indices();
+    if($indices->exists($this->getIndexParameter())){
+      $indices->delete($this->getIndexParameter());
     }
   }
 
@@ -131,11 +133,63 @@ class AffilinetImporter implements ImporterInterface {
    * @return array
    */
   private function getBaseParams(): array {
-    return [
-      'index' => 'nocake',
+    return $this->getIndexParameter() + [
       'type' => 'product',
     ];
+  }
 
+  /**
+   * @return array
+   */
+  private function getIndexParameter(): array {
+    if (empty($this->indexName)){
+      $this->getNewIndexName();
+    }
+
+    return [
+      'index' => $this->indexName,
+    ];
+  }
+
+  private function getNewIndexName() {
+    $counter = 1;
+    $indexName = 'nocake_' . date('Ymd') . '_';
+    $indices = $this->elasticSearch->indices();
+
+    while ($indices->exists(['index' => $indexName . $counter])) {
+      $counter++;
+    }
+    $this->indexName = $indexName . $counter;
+  }
+
+  private function getAliasName() {
+    return 'nocake';
+  }
+
+  private function getAliasParameter() {
+    return [
+      'name' => $this->getAliasName(),
+    ];
+  }
+
+  private function updateAlias() {
+    $aliasParameter = $this->getAliasParameter();
+    $indexParameter = $this->getIndexParameter();
+
+    $indices = $this->elasticSearch->indices();
+
+    if ($indices->existsAlias($aliasParameter)) {
+      $alias = $indices->getAlias($aliasParameter);
+      $index = key($alias);
+
+      $indices->deleteAlias(['index' => $index] + $aliasParameter);
+      $this->log("Deleted alias ${aliasParameter['name']}.", 'info');
+      $indices->delete(['index' => $index]);
+      $this->log("Deleted index ${index}.", 'info');
+    }
+    $putParameter = $indexParameter + $aliasParameter;
+    $indices->putAlias($putParameter);
+    $this->log("Created alias ${aliasParameter['name']} for index ${indexParameter['index']}.", 'info');
   }
 
   /**
