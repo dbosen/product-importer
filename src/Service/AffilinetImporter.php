@@ -1,5 +1,20 @@
 <?php
 
+/**
+ * query example:
+   GET /_search
+    {
+      "query": {
+        "multi_match": {
+          "query": "Search query",
+          "fields": [ "keywords", "title", "brand" ],
+          "tie_breaker": 0.3
+        }
+      }
+    }
+ */
+
+
 namespace Nocake\Service;
 
 use Elasticsearch\ClientBuilder;
@@ -84,6 +99,9 @@ class AffilinetImporter implements ImporterInterface {
     $csv->sort_by = 'Products';
     $csv->delimiter = ';';
     $csv->parse($catalogSources);
+    if(empty($csv->data)) {
+      throw new \Exception('No product lists found..');
+    }
     $this->lists = $csv->data;
   }
 
@@ -259,8 +277,7 @@ class AffilinetImporter implements ImporterInterface {
                 'analyzer' => 'german'
               ],
               'keywords' => [
-                'type' => 'text',
-                'analyzer' => 'lower_keyword'
+                'type' => 'text'
               ],
               'brand' => [
                 'type' => 'text',
