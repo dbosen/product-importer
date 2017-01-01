@@ -208,7 +208,16 @@ class AffilinetImporter implements ImporterInterface {
       'body' => [
         'settings' => [
           'number_of_shards' => 1,
-          'number_of_replicas' => 0
+          'number_of_replicas' => 0,
+          'analysis' => [
+            'analyzer' => [
+                  'lower_keyword' => [
+                    'type' => 'custom',
+                    'tokenizer' => 'keyword',
+                    'filter' => 'lowercase'
+                ]
+            ]
+          ]
         ],
         'mappings' => [
           $baseParams['type'] => [
@@ -250,10 +259,12 @@ class AffilinetImporter implements ImporterInterface {
                 'analyzer' => 'german'
               ],
               'keywords' => [
-                'type' => 'keyword',
+                'type' => 'text',
+                'analyzer' => 'lower_keyword'
               ],
               'brand' => [
-                'type' => 'keyword',
+                'type' => 'text',
+                'analyzer' => 'lower_keyword'
               ],
               'image' => [
                 'enabled' => false,
