@@ -2,16 +2,16 @@
 
 /**
  * query example:
-   GET /_search
-    {
-      "query": {
-        "multi_match": {
-          "query": "Search query",
-          "fields": [ "keywords", "title", "brand" ],
-          "tie_breaker": 0.3
-        }
-      }
-    }
+ * GET /_search
+ * {
+ * "query": {
+ * "multi_match": {
+ * "query": "Search query",
+ * "fields": [ "keywords", "title", "brand" ],
+ * "tie_breaker": 0.3
+ * }
+ * }
+ * }
  */
 
 
@@ -28,10 +28,12 @@ class AffilinetImporter implements ImporterInterface {
   const API_PASSWORD = 'qfLfcZ4GPWVJUATGIyCY';
   const DOWNLOAD_PATH = 'affilinet_importer_download';
   const IGNORE_LISTS = [4745, 3661, 1206, 5915];
+  const BATCH_SIZE = 1500;
 
   private $lists = [];
   private $http;
   private $indexName;
+  private $batch = ['counter' => 0, 'params' => ['body' => []]];
 
   /**
    * @var \Elasticsearch\Client
@@ -51,8 +53,8 @@ class AffilinetImporter implements ImporterInterface {
     try {
       foreach ($this->lists as $list) {
         if (!in_array($list['ListID'], self::IGNORE_LISTS)) {
-          $this->log("Importing ${list['Products']} products from '${list['Titel']}' (ListID: ${list['ListID']})", 'info');
-          $this->importList($list, $download);
+          $this->log("Importing ${list['Products']} products from list ${list['ListID']}: '${list['Titel']}'", 'info');
+          $this->batchImportList($list, $download);
         }
       }
     } catch (\Exception $e) {
@@ -60,9 +62,13 @@ class AffilinetImporter implements ImporterInterface {
       $this->deleteIndex();
       // do not update aliases
       return;
+    } finally {
+      $this->log("Finish Batch", 'info');
+      $this->finishBatch();
     }
 
     $this->updateAlias();
+    $this->cleanupIndices();
   }
 
   private function getSources() {
@@ -99,7 +105,7 @@ class AffilinetImporter implements ImporterInterface {
     $csv->sort_by = 'Products';
     $csv->delimiter = ';';
     $csv->parse($catalogSources);
-    if(empty($csv->data)) {
+    if (empty($csv->data)) {
       throw new \Exception('No product lists found..');
     }
     $this->lists = $csv->data;
@@ -109,22 +115,6 @@ class AffilinetImporter implements ImporterInterface {
     echo $type . ': ' . trim($message) . PHP_EOL;
   }
 
-  private function importList($list, $download) {
-    if (!$localFile = $this->getProductList($list, $download)) {
-      return;
-    }
-    $shop = 'affilinet-' .  $list['ListID'];
-
-    $streamer = XmlStringStreamer::createStringWalkerParser($localFile);
-
-    while ($node = $streamer->getNode()) {
-      $product = simplexml_load_string($node);
-      $productInfo = $this->parseProductInfo($product, $shop);
-      $this->indexProduct($productInfo, $shop);
-    }
-
-  }
-
   private function createIndex() {
     $indices = $this->elasticSearch->indices();
     $index = $this->getIndexParameter();
@@ -132,88 +122,20 @@ class AffilinetImporter implements ImporterInterface {
     try {
       if ($indices->exists($index)) {
         $this->log("Index ${index['index']} already existed", 'info');
-      } else {
-        $indices->create($this->getIndexParams());
+      }
+      else {
+        $indices->create($this->getIndexingParameters());
         $this->log("Index ${index['index']} created", 'info');
       }
     } catch (\Exception $e) {
       $this->log($e->getMessage(), 'error');
     }
   }
-  private function deleteIndex() {
-    $indices = $this->elasticSearch->indices();
-    if($indices->exists($this->getIndexParameter())){
-      $indices->delete($this->getIndexParameter());
-    }
-  }
 
   /**
    * @return array
    */
-  private function getBaseParams(): array {
-    return $this->getIndexParameter() + [
-      'type' => 'product',
-    ];
-  }
-
-  /**
-   * @return array
-   */
-  private function getIndexParameter(): array {
-    if (empty($this->indexName)){
-      $this->getNewIndexName();
-    }
-
-    return [
-      'index' => $this->indexName,
-    ];
-  }
-
-  private function getNewIndexName() {
-    $counter = 1;
-    $indexName = 'nocake_' . date('Ymd') . '_';
-    $indices = $this->elasticSearch->indices();
-
-    while ($indices->exists(['index' => $indexName . $counter])) {
-      $counter++;
-    }
-    $this->indexName = $indexName . $counter;
-  }
-
-  private function getAliasName() {
-    return 'nocake';
-  }
-
-  private function getAliasParameter() {
-    return [
-      'name' => $this->getAliasName(),
-    ];
-  }
-
-  private function updateAlias() {
-    $aliasParameter = $this->getAliasParameter();
-    $indexParameter = $this->getIndexParameter();
-
-    $indices = $this->elasticSearch->indices();
-
-    if ($indices->existsAlias($aliasParameter)) {
-      $alias = $indices->getAlias($aliasParameter);
-      $index = key($alias);
-
-      $indices->deleteAlias(['index' => $index] + $aliasParameter);
-      $this->log("Deleted alias ${aliasParameter['name']}.", 'info');
-      $indices->delete(['index' => $index]);
-      $this->log("Deleted index ${index}.", 'info');
-    }
-    $putParameter = $indexParameter + $aliasParameter;
-    $indices->putAlias($putParameter);
-    $this->log("Created alias ${aliasParameter['name']} for index ${indexParameter['index']}.", 'info');
-  }
-
-  /**
-   * @return array
-   */
-  private function getIndexParams(): array {
+  private function getIndexingParameters(): array {
     $baseParams = $this->getBaseParams();
 
     /*
@@ -229,22 +151,22 @@ class AffilinetImporter implements ImporterInterface {
           'number_of_replicas' => 0,
           'analysis' => [
             'analyzer' => [
-                  'lower_keyword' => [
-                    'type' => 'custom',
-                    'tokenizer' => 'keyword',
-                    'filter' => 'lowercase'
-                ]
+              'lower_keyword' => [
+                'type' => 'custom',
+                'tokenizer' => 'keyword',
+                'filter' => 'lowercase'
+              ]
             ]
           ]
         ],
         'mappings' => [
           $baseParams['type'] => [
             '_source' => [
-              'enabled' => true
+              'enabled' => TRUE
             ],
-            'dynamic' => false,
+            'dynamic' => FALSE,
             '_all' => [
-              'enabled' => false
+              'enabled' => FALSE
             ],
             'properties' => [
               'list' => [
@@ -266,7 +188,7 @@ class AffilinetImporter implements ImporterInterface {
                 'type' => 'keyword',
               ],
               'link' => [
-                'enabled' => false,
+                'enabled' => FALSE,
               ],
               'title' => [
                 'type' => 'text',
@@ -277,14 +199,16 @@ class AffilinetImporter implements ImporterInterface {
                 'analyzer' => 'german'
               ],
               'keywords' => [
-                'type' => 'text'
+                'type' => 'text',
+                'analyzer' => 'lower_keyword',
+                'fielddata' => true
               ],
               'brand' => [
                 'type' => 'text',
                 'analyzer' => 'lower_keyword'
               ],
               'image' => [
-                'enabled' => false,
+                'enabled' => FALSE,
               ]
             ]
           ]
@@ -293,9 +217,72 @@ class AffilinetImporter implements ImporterInterface {
     ];
 
   }
-  private function parseProductInfo($product, $list) : array {
+
+  /**
+   * @return array
+   */
+  private function getBaseParams(): array {
+    return $this->getIndexParameter() + [
+        'type' => 'product',
+      ];
+  }
+
+  private function batchImportList($list, $download) {
+    if (!$localFile = $this->getProductList($list, $download)) {
+      return;
+    }
+    $shop = 'affilinet-' . $list['ListID'];
+
+    $streamer = XmlStringStreamer::createStringWalkerParser($localFile);
+
+    while ($node = $streamer->getNode()) {
+      $product = simplexml_load_string($node);
+      $productInfo = $this->parseProductInfo($product, $shop);
+      $this->batchIndex($productInfo, $shop);
+    }
+  }
+
+  /**
+   * Download a remote product list.
+   *
+   * @param $list
+   *
+   * @return bool|string $localFile
+   */
+  private function getProductList($list, $download) {
+    $listDownloadUrl = sprintf(
+      self::DOWNLOAD_URL_TEMPLATE,
+      $list['ListID'],
+      self::PARTNER_ID,
+      self::API_PASSWORD
+    );
+
+    $urlPath = parse_url($listDownloadUrl)['path'];
+    $localTmpPath = sys_get_temp_dir() . '/' . self::DOWNLOAD_PATH;
+    $localFile = $localTmpPath . '/' . basename($urlPath);
+
+    if ($download || !file_exists($localFile)) {
+      if (!file_exists($localTmpPath)) {
+        if (!mkdir($localTmpPath, 0777, TRUE)) {
+          $this->log('Could not create download directory ' . $localTmpPath, 'error');
+          exit();
+        }
+      }
+
+
+      $res = $this->http->request('GET', $listDownloadUrl, ['sink' => $localFile]);
+      if ($res->getStatusCode() != 200) {
+        // something is wrong with this url
+        return FALSE;
+      }
+      $this->log("Downloaded list to $localFile", 'info');
+    }
+    return $localFile;
+  }
+
+  private function parseProductInfo($product, $list): array {
     $displayPrice = explode(' ', (string) $product->Price->DisplayPrice);
-    switch(count($displayPrice)) {
+    switch (count($displayPrice)) {
       case 0:
         $value = 0;
         $currency = '';
@@ -328,52 +315,145 @@ class AffilinetImporter implements ImporterInterface {
     return $indexData;
   }
 
-  private function indexProduct($productInfo, $list) {
-    $elasticSearchIndexParams = $this->getBaseParams();
-    $elasticSearchIndexParams['id'] = $list . '-' . $productInfo['articlenumber'];
-    $elasticSearchIndexParams['body'] = $productInfo;
-    try{
-        $this->elasticSearch->index($elasticSearchIndexParams);
-    } catch (\Exception $e) {
-      $this->log($e->getMessage(), 'error');
+  private function batchIndex($productInfo, $list) {
+    if (empty($this->batch['counter'])) {
+      $this->batch['counter'] = 1;
+    }
+    else {
+      $this->batch['counter']++;
+    }
+
+    $baseParams = $this->getBaseParams();
+
+    $index = [
+      'index' => [
+        '_index' => $baseParams['index'],
+        '_type' => $baseParams['type'],
+        '_id' => $list . '-' . $productInfo['articlenumber']
+      ]
+    ];
+
+    $fields = $productInfo;
+    $this->batch['params']['body'][] = $index;
+    $this->batch['params']['body'][] = $fields;
+
+    if ($this->batch['counter'] % self::BATCH_SIZE == 0) {
+      $this->bulkSend();
     }
   }
 
+  private function bulkSend() {
+    try {
+      $responses = $this->elasticSearch->bulk($this->batch['params']);
+    } catch (\Exception $e) {
+      $this->log($e->getMessage(), 'error');
+    } finally {
+      // reset body and cleanup
+      $this->batch['params'] = ['body' => []];
+      unset($responses);
+    }
+  }
+
+  private function finishBatch() {
+    // Send the last batch if it exists
+    if (!empty($this->batch['params']['body'])) {
+      $this->bulkSend();
+    }
+  }
+
+  private function deleteIndex() {
+    $indices = $this->elasticSearch->indices();
+    if ($indices->exists($this->getIndexParameter())) {
+      $indices->delete($this->getIndexParameter());
+    }
+  }
+
+  private function updateAlias() {
+    $aliasParameter = $this->getAliasParameter();
+    $indexParameter = $this->getIndexParameter();
+
+    $indices = $this->elasticSearch->indices();
+
+    if ($indices->existsAlias($aliasParameter)) {
+      $alias = $indices->getAlias($aliasParameter);
+      $index = key($alias);
+
+      $indices->deleteAlias(['index' => $index] + $aliasParameter);
+      $this->log("Deleted alias ${aliasParameter['name']}.", 'info');
+    }
+
+    $putParameter = $indexParameter + $aliasParameter;
+    $indices->putAlias($putParameter);
+    $this->log("Created alias ${aliasParameter['name']} for index ${indexParameter['index']}.", 'info');
+  }
+
   /**
-   * Download a remote product list.
-   *
-   * @param $list
-   *
-   * @return bool|string $localFile
+   * @return array
    */
-  private function getProductList($list, $download) {
-    $listDownloadUrl = sprintf(
-      self::DOWNLOAD_URL_TEMPLATE,
-      $list['ListID'],
-      self::PARTNER_ID,
-      self::API_PASSWORD
+  private function getIndexParameter(): array {
+    if (empty($this->indexName)) {
+      $this->getNewIndexName();
+    }
+
+    return [
+      'index' => $this->indexName,
+    ];
+  }
+
+  private function getNewIndexName() {
+    $counter = 1;
+    $prefix = $this->getIndexPrefix();
+    $indexName = $prefix . '_' . date('Ymd') . '_';
+    $indices = $this->elasticSearch->indices();
+
+    while ($indices->exists(['index' => $indexName . $counter])) {
+      $counter++;
+    }
+    $this->indexName = $indexName . $counter;
+  }
+
+  private function getIndexPrefix() {
+    return $this->getAliasName();
+  }
+
+  private function getAliasParameter() {
+    return [
+      'name' => $this->getAliasName(),
+    ];
+  }
+
+  private function getAliasName() {
+    return 'nocake';
+  }
+
+  /**
+   * Remove all indices that have the correct prefix, but do not have an alias
+   */
+  private function cleanupIndices(){
+    $client = $this->elasticSearch;
+    $indices = $client->indices();
+    $aliases = $indices->getAliases();
+
+    $prefix = $this->getIndexPrefix();
+
+    $filtered = array_filter(
+      $aliases,
+      function ($value, $index) use ($prefix) {
+        $hasPrefix = (strpos($index, $prefix) === 0);
+        $hasNoAlias = empty($value['aliases']);
+
+        return ($hasPrefix && $hasNoAlias);
+      },
+      ARRAY_FILTER_USE_BOTH
     );
 
-    $urlPath = parse_url($listDownloadUrl)['path'];
-    $localTmpPath = sys_get_temp_dir() . '/' . self::DOWNLOAD_PATH;
-    $localFile = $localTmpPath . '/' . basename($urlPath);
-
-    if($download || !file_exists($localFile)) {
-      if (!file_exists($localTmpPath)) {
-        if (!mkdir($localTmpPath, 0777, TRUE)) {
-          $this->log('Could not create download directory ' . $localTmpPath, 'error');
-          exit();
-        }
-      }
-
-
-      $res = $this->http->request('GET', $listDownloadUrl, ['sink' => $localFile]);
-      if ($res->getStatusCode() != 200) {
-        // something is wrong with this url
-        return FALSE;
-      }
-      $this->log("Downloaded list to $localFile", 'info');
-    }
-    return $localFile;
+    array_walk(
+      $filtered,
+      function ($value, $index, $indices) {
+        $indices->delete(['index' => $index]);
+        $this->log("Deleted index $index.", 'info');
+      },
+      $indices
+    );
   }
 }
