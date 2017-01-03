@@ -43,8 +43,7 @@ class AffilinetImporter implements ImporterInterface {
       }
     } catch (\Exception $e) {
       $this->log($e->getMessage(), 'error');
-      $this->deleteIndex();
-      // do not update aliases
+      $this->cleanupIndices();
       return;
     } finally {
       $this->log("Finish Batch", 'info');
@@ -187,6 +186,11 @@ class AffilinetImporter implements ImporterInterface {
                 'analyzer' => 'lower_keyword',
                 'fielddata' => true
               ],
+              'categories' => [
+                'type' => 'text',
+                'analyzer' => 'lower_keyword',
+                'fielddata' => true
+              ],
               'brand' => [
                 'type' => 'text',
                 'analyzer' => 'lower_keyword'
@@ -285,6 +289,9 @@ class AffilinetImporter implements ImporterInterface {
     $keywords = explode(',', (string) $product->Details->Keywords);
     $keywords = array_map('trim', $keywords);
 
+    $categories = explode('&gt;', (string) $product->CategoryPath->ProductCategoryPath);
+    $categories = array_map('trim', $categories);
+
     $indexData = [];
     $indexData['list'] = $list;
     $indexData['price']['value'] = $value;
@@ -294,6 +301,7 @@ class AffilinetImporter implements ImporterInterface {
     $indexData['title'] = (string) $product->Details->Title;
     $indexData['description'] = (string) $product->Details->DescriptionShort;
     $indexData['keywords'] = $keywords;
+    $indexData['categories'] = $categories;
     $indexData['brand'] = (string) $product->Details->Brand;
     $indexData['image']['url'] = (string) $product->Images->Img->URL;
     $indexData['image']['width'] = (string) $product->Images->Img->Width;
@@ -345,13 +353,6 @@ class AffilinetImporter implements ImporterInterface {
     // Send the last batch if it exists
     if (!empty($this->batch['params']['body'])) {
       $this->bulkSend();
-    }
-  }
-
-  private function deleteIndex() {
-    $indices = $this->elasticSearch->indices();
-    if ($indices->exists($this->getIndexParameter())) {
-      $indices->delete($this->getIndexParameter());
     }
   }
 
