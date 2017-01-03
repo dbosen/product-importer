@@ -1,20 +1,4 @@
 <?php
-
-/**
- * query example:
- * GET /_search
- * {
- * "query": {
- * "multi_match": {
- * "query": "Search query",
- * "fields": [ "keywords", "title", "brand" ],
- * "tie_breaker": 0.3
- * }
- * }
- * }
- */
-
-
 namespace Nocake\Service;
 
 use Elasticsearch\ClientBuilder;
@@ -28,7 +12,7 @@ class AffilinetImporter implements ImporterInterface {
   const API_PASSWORD = 'qfLfcZ4GPWVJUATGIyCY';
   const DOWNLOAD_PATH = 'affilinet_importer_download';
   const IGNORE_LISTS = [4745, 3661, 1206, 5915];
-  const BATCH_SIZE = 1500;
+  const BATCH_SIZE = 2500;
 
   private $lists = [];
   private $http;
@@ -209,6 +193,16 @@ class AffilinetImporter implements ImporterInterface {
               ],
               'image' => [
                 'enabled' => FALSE,
+                'type' => 'nested',
+                'properties' => [
+                  'url' => [],
+                  'width' => [
+                    'type' => 'integer',
+                  ],
+                  'height' => [
+                    'type' => 'integer',
+                  ],
+                ]
               ]
             ]
           ]
@@ -216,15 +210,6 @@ class AffilinetImporter implements ImporterInterface {
       ]
     ];
 
-  }
-
-  /**
-   * @return array
-   */
-  private function getBaseParams(): array {
-    return $this->getIndexParameter() + [
-        'type' => 'product',
-      ];
   }
 
   private function batchImportList($list, $download) {
@@ -310,7 +295,9 @@ class AffilinetImporter implements ImporterInterface {
     $indexData['description'] = (string) $product->Details->DescriptionShort;
     $indexData['keywords'] = $keywords;
     $indexData['brand'] = (string) $product->Details->Brand;
-    $indexData['image'] = (string) $product->Images->Img->URL;
+    $indexData['image']['url'] = (string) $product->Images->Img->URL;
+    $indexData['image']['width'] = (string) $product->Images->Img->Width;
+    $indexData['image']['height'] = (string) $product->Images->Img->Height;
 
     return $indexData;
   }
@@ -385,6 +372,15 @@ class AffilinetImporter implements ImporterInterface {
     $putParameter = $indexParameter + $aliasParameter;
     $indices->putAlias($putParameter);
     $this->log("Created alias ${aliasParameter['name']} for index ${indexParameter['index']}.", 'info');
+  }
+
+  /**
+   * @return array
+   */
+  private function getBaseParams(): array {
+    return $this->getIndexParameter() + [
+        'type' => 'product',
+      ];
   }
 
   /**
